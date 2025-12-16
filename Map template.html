@@ -144,6 +144,25 @@ body {
   margin-top: 0.25rem;
 }
 
+.info-category-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+  font-weight: 600;
+}
+
+.info-category-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.info-dot-yellow { background: #f5c048; }
+.info-dot-red { background: #e55353; }
+.info-dot-purple { background: #8b6ce7; }
+
 .info-image-wrapper {
   margin-top: 0.6rem;
 }
@@ -280,6 +299,46 @@ body {
   color: #444;
 }
 
+.category-row {
+  margin-top: 0.75rem;
+}
+
+.category-options {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.35rem;
+}
+
+.category-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  font-size: 0.92rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid #ddd;
+  border-radius: 999px;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.category-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot-yellow { background: #f5c048; }
+.dot-red { background: #e55353; }
+.dot-purple { background: #8b6ce7; }
+
+.category-option.selected {
+  background: #f2f2f2;
+  border-color: #c8c8c8;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+}
+
 .marker-modal input[type="file"] {
   margin-top: 0.25rem;
   font-size: 0.85rem;
@@ -328,6 +387,10 @@ body {
   </div>
   <div class="info-body">
     <div class="info-address" id="info-address"></div>
+    <div class="info-category-row" id="info-category-row" style="display:none;">
+      <span class="info-category-dot" id="info-category-dot"></span>
+      <span class="info-category-text" id="info-category-text"></span>
+    </div>
     <div class="info-description" id="info-description"></div>
     <div class="info-image-wrapper" id="info-image-wrapper" style="display:none;">
       <img id="info-image" alt="Location photo" />
@@ -361,11 +424,32 @@ body {
         <label>Address</label>
       <div class="address-display" id="marker-address-display">Fetching address…</div>
       
+       <div class="category-row">
+         <label>Category</label>
+         <div class="category-options" id="marker-category-group">
+           <label class="category-option">
+             <input type="radio" name="marker-category" value="surveying" checked />
+             <span class="category-dot dot-yellow"></span>
+             <span>Warning / Sighting</span>
+           </label>
+           <label class="category-option">
+             <input type="radio" name="marker-category" value="harassment" />
+             <span class="category-dot dot-red"></span>
+             <span>Questioned / Harassment</span>
+           </label>
+           <label class="category-option">
+             <input type="radio" name="marker-category" value="abduction" />
+             <span class="category-dot dot-purple"></span>
+             <span>Abduction / Detainment</span>
+           </label>
+         </div>
+       </div>
+
         <label for="marker-title">Title</label>
       <input type="text" id="marker-title" name="marker-title" placeholder="Location title" required />
 
       <label for="marker-description">Description</label>
-      <textarea id="marker-description" name="marker-description" placeholder="Describe this location"></textarea>
+      <textarea id="marker-description" name="marker-description" placeholder="Describe the situation"></textarea>
 
 
       <label for="marker-photo">Photo (optional)</label>
@@ -425,11 +509,15 @@ body {
     const markerPhotoInput = document.getElementById('marker-photo');
     const markerCancelButton = document.getElementById('marker-cancel');
     const markerAddressDisplay = document.getElementById('marker-address-display');
+    const markerCategoryGroup = document.getElementById('marker-category-group');
 
     // Info panel elements
     const infoPanel = document.getElementById('info-panel');
     const infoTitle = document.getElementById('info-title');
     const infoAddress = document.getElementById('info-address');
+    const infoCategoryRow = document.getElementById('info-category-row');
+    const infoCategoryDot = document.getElementById('info-category-dot');
+    const infoCategoryText = document.getElementById('info-category-text');
     const infoDescription = document.getElementById('info-description');
     const infoImageWrapper = document.getElementById('info-image-wrapper');
     const infoImage = document.getElementById('info-image');
@@ -450,6 +538,12 @@ body {
         markerDescriptionInput.value = '';
         markerPhotoInput.value = '';
         markerAddressDisplay.textContent = 'Fetching address…';
+        // reset category selection to default (first/checked)
+        const defaultCategory = markerCategoryGroup.querySelector('input[name="marker-category"]');
+        if (defaultCategory) {
+            defaultCategory.checked = true;
+            updateCategoryHighlight();
+        }
         markerModalBackdrop.style.display = 'flex';
 
         // Reverse geocode for display
@@ -472,10 +566,26 @@ body {
         pendingMarkerCoords = null;
     }
 
+    function categoryDisplay(category) {
+        switch (category) {
+            case 'harassment':
+                return { text: 'Questioned / Harassment', dotClass: 'info-dot-red' };
+            case 'abduction':
+                return { text: 'Abduction / Detainment', dotClass: 'info-dot-purple' };
+            case 'surveying':
+            default:
+                return { text: 'Warning / Sighting', dotClass: 'info-dot-yellow' };
+        }
+    }
+
     // Show info panel with marker details
-    function showInfoPanel(markerId, title, description, imageDataUrl, address) {
+    function showInfoPanel(markerId, title, description, imageDataUrl, address, category) {
+        const cat = categoryDisplay(category);
         infoTitle.textContent = title || 'Location';
         infoAddress.textContent = address || '';
+        infoCategoryDot.className = `info-category-dot ${cat.dotClass}`;
+        infoCategoryText.textContent = cat.text;
+        infoCategoryRow.style.display = 'flex';
         infoDescription.textContent = description || '';
 
         if (imageDataUrl) {
@@ -511,6 +621,30 @@ body {
         hideInfoPanel();
     });
 
+    // Update category selection highlighting
+    function updateCategoryHighlight() {
+        const options = markerCategoryGroup.querySelectorAll('.category-option');
+        options.forEach((opt) => {
+            const input = opt.querySelector('input[name="marker-category"]');
+            opt.classList.toggle('selected', input && input.checked);
+        });
+    }
+
+    markerCategoryGroup.addEventListener('change', updateCategoryHighlight);
+    infoDelete.addEventListener('click', () => {
+        if (!infoPanelMarkerId) return;
+        // Remove marker instance from map
+        const marker = markerRefs.get(infoPanelMarkerId);
+        if (marker) {
+            marker.remove();
+            markerRefs.delete(infoPanelMarkerId);
+        }
+        // Remove from saved list
+        savedMarkers = savedMarkers.filter((m) => m.id !== infoPanelMarkerId);
+        saveMarkers();
+        hideInfoPanel();
+    });
+
     // Attach click handler to a marker to toggle the info panel
     function attachMarkerInfo(marker, data, markerId) {
         const el = marker.getElement();
@@ -520,7 +654,7 @@ body {
             if (infoPanelMarkerId === markerId && infoPanel.style.display === 'block') {
                 hideInfoPanel();
             } else {
-                showInfoPanel(markerId, data.title, data.description, data.imageDataUrl, data.address);
+                showInfoPanel(markerId, data.title, data.description, data.imageDataUrl, data.address, data.category);
             }
         });
         markerRefs.set(markerId, marker);
@@ -550,7 +684,7 @@ body {
                     .setLngLat([m.lng, m.lat])
                     .addTo(map);
 
-                attachMarkerInfo(marker, { title, description, imageDataUrl, address }, markerId);
+                attachMarkerInfo(marker, { title, description, imageDataUrl, address, category: m.category || 'surveying' }, markerId);
             });
 
             // Persist newly assigned ids, if any
@@ -673,6 +807,8 @@ body {
         }
 
         const persistMarker = (imageDataUrl, addressText) => {
+            const categoryInput = markerCategoryGroup.querySelector('input[name="marker-category"]:checked');
+            const category = categoryInput ? categoryInput.value : 'surveying';
             const markerId = makeMarkerId();
             createMarkerWithPopup(imageDataUrl, addressText, markerId);
             savedMarkers.push({
@@ -682,7 +818,8 @@ body {
                 title,
                 description,
                 imageDataUrl,
-                address: addressText || ''
+                address: addressText || '',
+                category
             });
             saveMarkers();
         };
