@@ -47,6 +47,114 @@ body {
   font-size: 1.05rem;
 }
 
+/* Popup collapse/expand */
+.mapboxgl-popup-content {
+  cursor: pointer;
+}
+.mapboxgl-popup-content .popup-body {
+  display: none;
+  margin-top: 4px;
+  font-size: 12px;
+}
+.mapboxgl-popup-content.expanded .popup-body {
+  display: block;
+}
+.mapboxgl-popup-content .popup-image {
+  margin-top: 6px;
+}
+.mapboxgl-popup-content .popup-image img {
+  max-width: 200px;
+  max-height: 150px;
+  border-radius: 4px;
+  display: block;
+}
+
+/* Bottom-left info panel for marker details */
+.info-panel {
+  position: absolute;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 2;
+  width: 320px;
+  max-width: 90vw;
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 10px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.25);
+  padding: 0.75rem 0.9rem;
+  display: none;
+  font-family: sans-serif;
+}
+
+.info-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.info-title {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #222;
+}
+
+.info-close {
+  border: none;
+  background: #e5e5e5;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  font-size: 16px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.info-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.info-delete {
+  border: none;
+  background: #ff4d4f;
+  color: #fff;
+  border-radius: 6px;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.info-body {
+  margin-top: 0.5rem;
+  color: #333;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.info-address {
+  font-size: 0.9rem;
+  color: #444;
+  margin-top: 0.15rem;
+}
+
+.info-description {
+  margin-top: 0.25rem;
+}
+
+.info-image-wrapper {
+  margin-top: 0.6rem;
+}
+
+.info-image-wrapper img {
+  max-width: 100%;
+  max-height: 180px;
+  border-radius: 6px;
+  display: block;
+}
+
 /* Left control panel */
 .left-panel {
   position: absolute;
@@ -166,6 +274,12 @@ body {
   min-height: 70px;
 }
 
+.marker-modal .address-display {
+  margin-top: 0.35rem;
+  font-size: 0.9rem;
+  color: #444;
+}
+
 .marker-modal input[type="file"] {
   margin-top: 0.25rem;
   font-size: 0.85rem;
@@ -206,6 +320,24 @@ body {
   <span>ICE TRACKER</span>
 </div>
 
+<!-- Bottom-left info panel for marker details -->
+<div class="info-panel" id="info-panel">
+  <div class="info-header">
+    <div class="info-title" id="info-title">Location</div>
+    <button class="info-close" id="info-close" aria-label="Close details">×</button>
+  </div>
+  <div class="info-body">
+    <div class="info-address" id="info-address"></div>
+    <div class="info-description" id="info-description"></div>
+    <div class="info-image-wrapper" id="info-image-wrapper" style="display:none;">
+      <img id="info-image" alt="Location photo" />
+    </div>
+  </div>
+  <div class="info-actions">
+    <button class="info-delete" id="info-delete" aria-label="Delete marker">Delete</button>
+  </div>
+</div>
+
 <!-- Left-side controls -->
 <div class="left-panel">
   <button id="add-location-toggle" class="add-location-btn">
@@ -223,13 +355,18 @@ body {
 <!-- Marker details modal -->
 <div class="marker-modal-backdrop" id="marker-modal-backdrop">
   <div class="marker-modal">
-    <h3>Add Marker Details</h3>
+    <h3>Report a Sighting</h3>
     <form id="marker-form">
-      <label for="marker-title">Title</label>
+      
+        <label>Address</label>
+      <div class="address-display" id="marker-address-display">Fetching address…</div>
+      
+        <label for="marker-title">Title</label>
       <input type="text" id="marker-title" name="marker-title" placeholder="Location title" required />
 
       <label for="marker-description">Description</label>
       <textarea id="marker-description" name="marker-description" placeholder="Describe this location"></textarea>
+
 
       <label for="marker-photo">Photo (optional)</label>
       <input type="file" id="marker-photo" name="marker-photo" accept="image/*" />
@@ -262,6 +399,7 @@ body {
     let mapboxSearchBox = null;
     // Store coordinates for marker being created
     let pendingMarkerCoords = null;
+    let pendingMarkerAddress = '';
     // Whether we are currently in "add location" mode
     let addLocationMode = false;
     // Local storage key for saved markers
@@ -269,6 +407,8 @@ body {
 
     // In-memory list of saved markers
     let savedMarkers = [];
+    // Map markerId -> mapbox marker instance for removal
+    const markerRefs = new Map();
 
     // Left panel toggle for adding locations
     const addLocationToggle = document.getElementById('add-location-toggle');
@@ -284,18 +424,106 @@ body {
     const markerDescriptionInput = document.getElementById('marker-description');
     const markerPhotoInput = document.getElementById('marker-photo');
     const markerCancelButton = document.getElementById('marker-cancel');
+    const markerAddressDisplay = document.getElementById('marker-address-display');
+
+    // Info panel elements
+    const infoPanel = document.getElementById('info-panel');
+    const infoTitle = document.getElementById('info-title');
+    const infoAddress = document.getElementById('info-address');
+    const infoDescription = document.getElementById('info-description');
+    const infoImageWrapper = document.getElementById('info-image-wrapper');
+    const infoImage = document.getElementById('info-image');
+    const infoClose = document.getElementById('info-close');
+    const infoDelete = document.getElementById('info-delete');
+
+    let infoPanelMarkerId = null; // track which marker is currently shown
+
+    // Simple marker id generator
+    function makeMarkerId() {
+        return `m-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
 
     function openMarkerModal(coords) {
         pendingMarkerCoords = coords;
+        pendingMarkerAddress = '';
         markerTitleInput.value = '';
         markerDescriptionInput.value = '';
         markerPhotoInput.value = '';
+        markerAddressDisplay.textContent = 'Fetching address…';
         markerModalBackdrop.style.display = 'flex';
+
+        // Reverse geocode for display
+        const geocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${coords[0]},${coords[1]}.json?access_token=${mapboxgl.accessToken}&limit=1`;
+        fetch(geocodeUrl)
+            .then(res => res.json())
+            .then(data => {
+                const addr = (data.features && data.features[0] && data.features[0].place_name) ? data.features[0].place_name : 'Address not found';
+                pendingMarkerAddress = addr === 'Address not found' ? '' : addr;
+                markerAddressDisplay.textContent = addr;
+            })
+            .catch(() => {
+                pendingMarkerAddress = '';
+                markerAddressDisplay.textContent = 'Address not found';
+            });
     }
 
     function closeMarkerModal() {
         markerModalBackdrop.style.display = 'none';
         pendingMarkerCoords = null;
+    }
+
+    // Show info panel with marker details
+    function showInfoPanel(markerId, title, description, imageDataUrl, address) {
+        infoTitle.textContent = title || 'Location';
+        infoAddress.textContent = address || '';
+        infoDescription.textContent = description || '';
+
+        if (imageDataUrl) {
+            infoImageWrapper.style.display = 'block';
+            infoImage.src = imageDataUrl;
+            infoImage.alt = title || 'Location photo';
+        } else {
+            infoImageWrapper.style.display = 'none';
+            infoImage.src = '';
+        }
+
+        infoPanel.style.display = 'block';
+        infoPanelMarkerId = markerId;
+    }
+
+    function hideInfoPanel() {
+        infoPanel.style.display = 'none';
+        infoPanelMarkerId = null;
+    }
+
+    infoClose.addEventListener('click', hideInfoPanel);
+    infoDelete.addEventListener('click', () => {
+        if (!infoPanelMarkerId) return;
+        // Remove marker instance from map
+        const marker = markerRefs.get(infoPanelMarkerId);
+        if (marker) {
+            marker.remove();
+            markerRefs.delete(infoPanelMarkerId);
+        }
+        // Remove from saved list
+        savedMarkers = savedMarkers.filter((m) => m.id !== infoPanelMarkerId);
+        saveMarkers();
+        hideInfoPanel();
+    });
+
+    // Attach click handler to a marker to toggle the info panel
+    function attachMarkerInfo(marker, data, markerId) {
+        const el = marker.getElement();
+        el.style.cursor = 'pointer';
+        el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (infoPanelMarkerId === markerId && infoPanel.style.display === 'block') {
+                hideInfoPanel();
+            } else {
+                showInfoPanel(markerId, data.title, data.description, data.imageDataUrl, data.address);
+            }
+        });
+        markerRefs.set(markerId, marker);
     }
 
     // Load saved markers from localStorage and add them to the map
@@ -307,42 +535,26 @@ body {
             if (!Array.isArray(data)) return;
             savedMarkers = data;
 
-            data.forEach((m) => {
+            data.forEach((m, idx) => {
                 if (!m || typeof m.lng !== 'number' || typeof m.lat !== 'number') return;
                 const title = m.title || 'Untitled location';
                 const description = m.description || '';
                 const imageDataUrl = m.imageDataUrl || null;
-
-                const popupContentParts = [`<strong>${title}</strong>`];
-                if (description) {
-                    popupContentParts.push(`<div style="margin-top:4px; font-size:12px;">${description}</div>`);
+                const address = m.address || '';
+                const markerId = m.id || makeMarkerId();
+                if (!m.id) {
+                    savedMarkers[idx] = { ...m, id: markerId };
                 }
-                if (imageDataUrl) {
-                    popupContentParts.push(`<div style="margin-top:6px;"><img src="${imageDataUrl}" alt="Location photo" style="max-width:200px; max-height:150px; border-radius:4px;"></div>`);
-                }
-
-                const popup = new mapboxgl.Popup({ offset: 24 })
-                    .setHTML(popupContentParts.join(''));
 
                 const marker = new mapboxgl.Marker()
                     .setLngLat([m.lng, m.lat])
-                    .setPopup(popup)
                     .addTo(map);
 
-                // Toggle popup on click of the popup itself
-                popup.on('open', () => {
-                    const el = popup.getElement();
-                    if (!el) return;
-                    el.style.cursor = 'pointer';
-                    el.addEventListener('click', () => {
-                        if (popup.isOpen()) {
-                            popup.remove();
-                        } else {
-                            popup.addTo(map);
-                        }
-                    });
-                });
+                attachMarkerInfo(marker, { title, description, imageDataUrl, address }, markerId);
             });
+
+            // Persist newly assigned ids, if any
+            saveMarkers();
         } catch (e) {
             console.error('Error loading saved markers:', e);
         }
@@ -452,69 +664,56 @@ body {
 
         const [lng, lat] = pendingMarkerCoords;
 
-        function createMarkerWithPopup(imageDataUrl) {
-            const popupContentParts = [`<strong>${title}</strong>`];
-            if (description) {
-                popupContentParts.push(`<div style="margin-top:4px; font-size:12px;">${description}</div>`);
-            }
-            if (imageDataUrl) {
-                popupContentParts.push(`<div style="margin-top:6px;"><img src="${imageDataUrl}" alt="Location photo" style="max-width:200px; max-height:150px; border-radius:4px;"></div>`);
-            }
-
-            const popup = new mapboxgl.Popup({ offset: 24 })
-                .setHTML(popupContentParts.join(''));
-
+        function createMarkerWithPopup(imageDataUrl, addressText, markerId) {
             const marker = new mapboxgl.Marker()
                 .setLngLat([lng, lat])
-                .setPopup(popup)
                 .addTo(map);
 
-            popup.addTo(map);
-
-            // Toggle popup on click of the popup itself
-            popup.on('open', () => {
-                const el = popup.getElement();
-                if (!el) return;
-                el.style.cursor = 'pointer';
-                el.addEventListener('click', () => {
-                    if (popup.isOpen()) {
-                        popup.remove();
-                    } else {
-                        popup.addTo(map);
-                    }
-                });
-            });
+            attachMarkerInfo(marker, { title, description, imageDataUrl, address: addressText }, markerId);
         }
 
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const imageDataUrl = e.target.result;
-                createMarkerWithPopup(imageDataUrl);
-
-                // Save marker to local storage
-                savedMarkers.push({
-                    lng,
-                    lat,
-                    title,
-                    description,
-                    imageDataUrl
-                });
-                saveMarkers();
-            };
-            reader.readAsDataURL(file);
-        } else {
-            createMarkerWithPopup(null);
-
-            // Save marker without image
+        const persistMarker = (imageDataUrl, addressText) => {
+            const markerId = makeMarkerId();
+            createMarkerWithPopup(imageDataUrl, addressText, markerId);
             savedMarkers.push({
+                id: markerId,
                 lng,
                 lat,
                 title,
                 description,
-                imageDataUrl: null
+                imageDataUrl,
+                address: addressText || ''
             });
             saveMarkers();
+        };
+
+        const proceedWithAddress = (addressText) => {
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const imageDataUrl = e.target.result;
+                    persistMarker(imageDataUrl, addressText);
+                };
+                reader.readAsDataURL(file);
+            } else {
+                persistMarker(null, addressText);
+            }
+        };
+
+        // Reverse geocode to fetch address, then save
+        if (pendingMarkerAddress) {
+            proceedWithAddress(pendingMarkerAddress);
+        } else {
+            const geocodingUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${mapboxgl.accessToken}&limit=1`;
+            fetch(geocodingUrl)
+                .then((response) => response.json())
+                .then((data) => {
+                    const addressText = (data.features && data.features[0] && data.features[0].place_name) ? data.features[0].place_name : '';
+                    proceedWithAddress(addressText);
+                })
+                .catch(() => {
+                    proceedWithAddress('');
+                });
         }
 
         closeMarkerModal();
